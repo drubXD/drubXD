@@ -1,3 +1,5 @@
-muselsl
+numpy
+scipy
 pylsl
-pynput
+pyautogui
+muselsl

@@ -1,9 +1,4 @@
 .env
-.venv/
 __pycache__/
-*.pyc
-*.nii
-*.nii.gz
-*.dcm
-*.pt
-scan.html
+.venv/
+node_modules/

@@ -1,7 +1,0 @@
-{
-  "Seasonal allergies": ["sneezing", "itchy eyes", "runny nose"],
-  "Common cold": ["sneezing", "runny nose", "sore throat", "cough"],
-  "Migraine": ["headache", "nausea", "light sensitivity"],
-  "Influenza": ["fever", "cough", "muscle aches", "fatigue"],
-  "Motion sickness": ["nausea", "dizziness", "sweating"]
-}

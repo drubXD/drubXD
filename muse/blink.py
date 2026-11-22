@@ -1,77 +1,54 @@
-"""Convert a rising blink artifact into one Chrome Dinosaur jump."""
+"""Play Chrome Dinosaur using the blink rule from Dhruv's Muse 2 guide."""
 import argparse
-import math
-from statistics import median
 
 
-class BlinkDetector:
-    def __init__(self, baseline, threshold=100, cooldown=0.45):
-        self.baseline = baseline
-        self.threshold = threshold
-        self.cooldown = cooldown
-        self.armed = True
-        self.last_jump = -math.inf
-
-    def update(self, value, timestamp):
-        amplitude = abs(value - self.baseline)
-        if amplitude < self.threshold / 2:
-            self.armed = True
-        if self.armed and amplitude >= self.threshold:
-            self.armed = False
-            if timestamp - self.last_jump >= self.cooldown:
-                self.last_jump = timestamp
-                return True
-        return False
+def playback(levels, press):
+    previous = 0.0
+    for current in levels:
+        onset = current >= 1 and previous <= 1
+        quick_blink = current >= 1.7 and previous >= 1
+        if onset or quick_blink:
+            print("Blink!", flush=True)
+            press()
+        previous = current
 
 
-def stream_samples():
+def delta_levels():
+    import numpy as np
     from pylsl import StreamInlet, resolve_byprop
+    from signal_utils import update_buffer, compute_band_powers
 
-    streams = resolve_byprop("type", "EEG", timeout=8)
-    candidates = [s for s in streams if "muse" in s.name().lower()]
-    if len(candidates) != 1:
-        raise SystemExit("Start exactly one Muse EEG stream with muselsl stream.")
-    inlet = StreamInlet(candidates[0])
+    streams = resolve_byprop('type', 'EEG', timeout=8)
+    if len(streams) != 1:
+        raise SystemExit('Start exactly one EEG stream in Petal Metrics or MuseLSL.')
+    inlet = StreamInlet(streams[0])
     try:
+        rate = int(round(inlet.info().nominal_srate()))
+        if rate < 8:
+            raise SystemExit('Expected a regularly sampled Muse EEG stream.')
+        buffer = np.zeros((rate, 1))
+        state = None
         while True:
-            sample, timestamp = inlet.pull_sample(timeout=3)
-            if sample is None:
-                raise SystemExit("Muse stream timed out. Check the connection.")
-            value = (sample[1] + sample[2]) / 2  # AF7 and AF8 in MuseLSL order
-            if math.isfinite(value):
-                yield value, timestamp
+            chunk, _ = inlet.pull_chunk(timeout=1, max_samples=max(1, int(0.2 * rate)))
+            if not chunk:
+                continue
+            channel = np.asarray(chunk)[:, :1]
+            buffer, state = update_buffer(buffer, channel, notch=True, filter_state=state)
+            yield float(compute_band_powers(buffer, rate)[0])
     finally:
         inlet.close_stream()
 
 
-def main():
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--demo", action="store_true")
-    parser.add_argument("--keyboard", action="store_true", help="Send space to focused window")
-    parser.add_argument("--threshold", type=float, default=100, help="Microvolts above baseline")
+    parser.add_argument('--demo', action='store_true', help='Replay two synthetic blink events')
+    parser.add_argument('--keyboard', action='store_true', help='Send Space to the focused game')
     args = parser.parse_args()
-    if not math.isfinite(args.threshold) or args.threshold <= 0:
-        parser.error("Threshold must be finite and positive.")
-    if args.demo:
-        samples = ((150 if i in (200, 201, 350) else 0, i / 100) for i in range(400))
-    else:
-        samples = stream_samples()
-    keyboard = None
-    if args.keyboard:
-        from pynput.keyboard import Controller, Key
-        keyboard = Controller()
-    print("Relax for calibration and keep the target window focused.", flush=True)
-    baseline = median(next(samples)[0] for _ in range(128))
-    detector = BlinkDetector(baseline, args.threshold)
-    for value, timestamp in samples:
-        if detector.update(value, timestamp):
-            print(f"Jump at {timestamp:.2f}s", flush=True)
-            if keyboard:
-                keyboard.tap(Key.space)
-
-
-if __name__ == "__main__":
+    def press_space():
+        if args.keyboard:
+            import pyautogui
+            pyautogui.press('space')
     try:
-        main()
+        playback([0.2, 1.2, 1.3, 1.75, 0.4] if args.demo else delta_levels(), press_space)
     except KeyboardInterrupt:
         pass
